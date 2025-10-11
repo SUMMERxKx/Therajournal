@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 
 import { useAppStore } from '../store/appStore';
 import { resetEncryptionKeys, updatePassword, requestPasswordReset } from '../auth/auth';
@@ -17,6 +18,7 @@ import { llmService, AIProvider } from '../ai/llm';
 import { useDonationStore } from '../store/donationStore';
 
 export default function SettingsScreen() {
+  const navigation = useNavigation();
   const { 
     user, 
     logout, 
@@ -351,7 +353,7 @@ export default function SettingsScreen() {
           {renderSettingItem(
             'Change Password',
             'Update your account password',
-            () => {} // TODO: Implement password change modal
+            () => Alert.alert('Coming Soon', 'Password change feature will be available soon. Use "Forgot Password" to reset via email.')
           )}
 
           {renderSettingItem(
@@ -412,8 +414,7 @@ export default function SettingsScreen() {
             'Support TheraJournal',
             isSupporter() ? 'Thank you for your support!' : 'Help keep the app free',
             () => {
-              // TODO: Navigate to donation screen
-              Alert.alert('Coming Soon', 'Donation screen will be available soon!');
+              (navigation as any).navigate('Support');
             },
             isSupporter() ? (
               <View className="bg-green-100 rounded-full px-2 py-1">

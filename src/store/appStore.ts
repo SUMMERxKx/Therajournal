@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, User } from '../data/schemas';
 import { getCurrentUser, signOut } from '../auth/auth';
 import { CryptoKey } from '../utils/types';
+import logger from '../utils/logger';
 
 interface AppStore extends AppState {
   // Actions
@@ -76,7 +77,7 @@ export const useAppStore = create<AppStore>()(
             isLoading: false 
           });
         } catch (error) {
-          console.error('Logout error:', error);
+          logger.error('Logout error:', error);
           set({ isLoading: false });
         }
       },
@@ -87,7 +88,7 @@ export const useAppStore = create<AppStore>()(
           const { user, error } = await getCurrentUser();
           
           if (error) {
-            console.error('Auth check error:', error);
+            logger.error('Auth check error:', error);
             set({ user: null, isAuthenticated: false, isLoading: false });
             return;
           }
@@ -98,7 +99,7 @@ export const useAppStore = create<AppStore>()(
             isLoading: false 
           });
         } catch (error) {
-          console.error('Auth check failed:', error);
+          logger.error('Auth check failed:', error);
           set({ user: null, isAuthenticated: false, isLoading: false });
         }
       },

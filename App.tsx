@@ -15,7 +15,7 @@ import AuthScreen from './src/screens/AuthScreen';
 import DonationScreen from './src/screens/DonationScreen';
 
 // Stores
-import { useAppStore } from './src/store/appStore.demo';
+import { useAppStore } from './src/store/appStore';
 
 // Styles
 import './src/styles/global.css';
@@ -102,18 +102,13 @@ function MainTabs() {
 }
 
 export default function App() {
-  // Demo mode - bypass authentication for UI testing
-  const DEMO_MODE = true;
-  
   const { isAuthenticated, isLoading, checkAuth } = useAppStore();
 
   useEffect(() => {
-    if (!DEMO_MODE) {
-      checkAuth();
-    }
-  }, []);
+    checkAuth();
+  }, [checkAuth]);
 
-  if (isLoading && !DEMO_MODE) {
+  if (isLoading) {
     return (
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
@@ -130,7 +125,7 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <NavigationContainer>
           <StatusBar style="auto" />
-          {DEMO_MODE || isAuthenticated ? <MainTabs /> : <AuthScreen />}
+          {isAuthenticated ? <MainTabs /> : <AuthScreen />}
         </NavigationContainer>
       </QueryClientProvider>
     </SafeAreaProvider>

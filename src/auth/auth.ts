@@ -13,6 +13,7 @@ import {
   wrapDEK
 } from '../crypto/encryption';
 import { KeySetup } from '../data/schemas';
+import logger from '../utils/logger';
 
 export interface AuthResult {
   user: User | null;
@@ -202,7 +203,7 @@ export async function getUserEncryptionKey(passphrase?: string): Promise<CryptoK
       return await retrieveDEKFromKeystore();
     }
   } catch (error) {
-    console.error('Failed to retrieve encryption key:', error);
+    logger.error('Failed to retrieve encryption key:', error);
     return null;
   }
 }

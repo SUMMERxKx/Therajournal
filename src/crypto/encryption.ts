@@ -1,6 +1,6 @@
 import { CRYPTO_ALGORITHM, CRYPTO_KEY_LENGTH, IV_LENGTH, SALT_LENGTH } from '../utils/constants';
 import { EncryptedData, CryptoKeys } from '../utils/types';
-// import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from 'expo-secure-store';
 import { STORAGE_KEYS } from '../utils/constants';
 
 /**

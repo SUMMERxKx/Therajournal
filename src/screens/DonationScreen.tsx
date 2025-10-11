@@ -242,7 +242,6 @@ export default function DonationScreen() {
             <TouchableOpacity
               className="bg-gray-50 rounded-lg p-4 flex-row items-center"
               onPress={() => {
-                // TODO: Add app store rating functionality
                 Alert.alert('Coming Soon', 'Rate us on the App Store to help others discover TheraJournal!');
               }}
             >
@@ -257,7 +256,6 @@ export default function DonationScreen() {
             <TouchableOpacity
               className="bg-gray-50 rounded-lg p-4 flex-row items-center"
               onPress={() => {
-                // TODO: Add sharing functionality
                 Alert.alert('Coming Soon', 'Share TheraJournal with friends who might benefit from journaling!');
               }}
             >
