@@ -1,20 +1,16 @@
-import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
+import { webSecureStore } from '../utils/webSecureStore';
 
-// Supabase configuration from environment variables
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+// Mock Supabase configuration for frontend testing
+// Replace these with your actual Supabase values when ready
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'mock-anon-key';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Missing Supabase environment variables. Please ensure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set in your .env file.'
-  );
-}
-
+// Create Supabase client with mock values for frontend testing
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: require('expo-secure-store'),
+    storage: webSecureStore,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,

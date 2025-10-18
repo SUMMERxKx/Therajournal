@@ -1,106 +1,106 @@
 import { create } from 'zustand';
-import { ChatState, ConversationPlain, MessagePlain } from '../data/schemas';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { localStorage } from '../utils/storage';
+import { Conversation, Message } from '../data/schemas';
+import { ConversationQueries } from '../data/queries';
 
-interface ChatStore extends ChatState {
+interface ChatStore {
+  // State
+  conversations: Conversation[];
+  currentConversation: Conversation | null;
+  messages: Message[];
+  
   // Actions
-  setCurrentConversation: (conversationId: string | null) => void;
-  addConversation: (conversation: ConversationPlain) => void;
-  updateConversation: (id: string, updates: Partial<ConversationPlain>) => void;
-  removeConversation: (id: string) => void;
-  
-  // Messages
-  addMessage: (conversationId: string, message: MessagePlain) => void;
-  updateMessage: (conversationId: string, messageId: string, updates: Partial<MessagePlain>) => void;
-  removeMessage: (conversationId: string, messageId: string) => void;
-  setMessages: (conversationId: string, messages: MessagePlain[]) => void;
-  
-  // UI state
-  setGenerating: (generating: boolean) => void;
-  
-  // Helpers
-  getCurrentMessages: () => MessagePlain[];
-  getConversation: (id: string) => ConversationPlain | undefined;
-  clearChat: () => void;
+  setCurrentConversation: (conversation: Conversation | null) => void;
+  addMessage: (message: Message) => void;
+  createConversation: (userId: string, title: string) => Promise<Conversation>;
+  loadConversations: (userId: string) => Promise<void>;
+  loadMessages: (conversationId: string) => Promise<void>;
 }
 
-export const useChatStore = create<ChatStore>((set, get) => ({
-  // Initial state
-  currentConversation: null,
-  conversations: [],
-  messages: {},
-  isGenerating: false,
+export const useChatStore = create<ChatStore>()(
+  persist(
+    (set, get) => ({
+      // Initial state
+      conversations: [],
+      currentConversation: null,
+      messages: [],
 
-  // Actions
-  setCurrentConversation: (conversationId) => set({ 
-    currentConversation: conversationId 
-  }),
+      // Actions
+      setCurrentConversation: (conversation) => {
+        set({ currentConversation: conversation });
+        if (conversation) {
+          get().loadMessages(conversation.id);
+        }
+      },
 
-  addConversation: (conversation) => set((state) => ({
-    conversations: [conversation, ...state.conversations]
-  })),
+      addMessage: (message) => {
+        const { messages } = get();
+        set({ messages: [...messages, message] });
+      },
 
-  updateConversation: (id, updates) => set((state) => ({
-    conversations: state.conversations.map(conv => 
-      conv.id === id ? { ...conv, ...updates } : conv
-    )
-  })),
+      createConversation: async (userId: string, title: string) => {
+        try {
+          const result = await ConversationQueries.createConversation({
+            user_id: userId,
+            title_enc: new Uint8Array(), // Will be encrypted by the query
+            iv: new Uint8Array(),
+          });
+          
+          if (result.error) {
+            throw new Error(result.error);
+          }
 
-  removeConversation: (id) => set((state) => {
-    const { [id]: removed, ...remainingMessages } = state.messages;
-    return {
-      conversations: state.conversations.filter(conv => conv.id !== id),
-      messages: remainingMessages,
-      currentConversation: state.currentConversation === id ? null : state.currentConversation
-    };
-  }),
+          const conversation = result.conversation!;
+          const { conversations } = get();
+          set({ 
+            conversations: [conversation, ...conversations],
+            currentConversation: conversation,
+            messages: [],
+          });
 
-  addMessage: (conversationId, message) => set((state) => ({
-    messages: {
-      ...state.messages,
-      [conversationId]: [...(state.messages[conversationId] || []), message]
+          return conversation;
+        } catch (error) {
+          throw error;
+        }
+      },
+
+      loadConversations: async (userId: string) => {
+        try {
+          const result = await ConversationQueries.getConversations(userId);
+          if (result.error) {
+            throw new Error(result.error);
+          }
+          set({ conversations: result.conversations || [] });
+        } catch (error) {
+          console.error('Failed to load conversations:', error);
+        }
+      },
+
+      loadMessages: async (conversationId: string) => {
+        try {
+          const result = await MessageQueries.getMessages(conversationId);
+          if (result.error) {
+            throw new Error(result.error);
+          }
+          set({ messages: result.messages || [] });
+        } catch (error) {
+          console.error('Failed to load messages:', error);
+        }
+      },
+    }),
+    {
+      name: 'thera-chat-store',
+      storage: createJSONStorage(() => ({
+        getItem: (name) => localStorage.getItem(name),
+        setItem: (name, value) => localStorage.setItem(name, value),
+        removeItem: (name) => localStorage.removeItem(name),
+      })),
+      partialize: (state) => ({
+        conversations: state.conversations,
+        currentConversation: state.currentConversation,
+        // Don't persist messages for privacy
+      }),
     }
-  })),
-
-  updateMessage: (conversationId, messageId, updates) => set((state) => ({
-    messages: {
-      ...state.messages,
-      [conversationId]: (state.messages[conversationId] || []).map(msg =>
-        msg.id === messageId ? { ...msg, ...updates } : msg
-      )
-    }
-  })),
-
-  removeMessage: (conversationId, messageId) => set((state) => ({
-    messages: {
-      ...state.messages,
-      [conversationId]: (state.messages[conversationId] || []).filter(msg => msg.id !== messageId)
-    }
-  })),
-
-  setMessages: (conversationId, messages) => set((state) => ({
-    messages: {
-      ...state.messages,
-      [conversationId]: messages
-    }
-  })),
-
-  setGenerating: (generating) => set({ isGenerating: generating }),
-
-  // Helpers
-  getCurrentMessages: () => {
-    const { currentConversation, messages } = get();
-    return currentConversation ? (messages[currentConversation] || []) : [];
-  },
-
-  getConversation: (id) => {
-    const { conversations } = get();
-    return conversations.find(conv => conv.id === id);
-  },
-
-  clearChat: () => set({
-    currentConversation: null,
-    conversations: [],
-    messages: {},
-    isGenerating: false
-  }),
-}));
+  )
+);

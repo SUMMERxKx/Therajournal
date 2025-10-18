@@ -1,374 +1,274 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-
+import { Send, MessageCircle, Bot, User } from 'lucide-react';
 import { useChatStore } from '../store/chatStore';
-import { useAppStore } from '../store/appStore';
-import { ConversationQueries, MessageQueries } from '../data/queries';
-import { searchIndexer } from '../search/indexer';
 import { llmService } from '../ai/llm';
-import { MessagePlain, ConversationPlain } from '../data/schemas';
-
-interface ChatMessage extends MessagePlain {
-  isLoading?: boolean;
-}
+import { useAppStore } from '../store/appStore';
+import { searchIndexer } from '../search/indexer';
+import { encrypt, decrypt } from '../crypto/encryption';
+import { MessageQueries } from '../data/queries';
+import logger from '../utils/logger';
 
 export default function ChatScreen() {
-  const { 
-    currentConversation, 
-    conversations, 
-    messages, 
-    isGenerating,
-    setCurrentConversation,
-    addConversation,
-    addMessage,
-    setGenerating,
-    getCurrentMessages
-  } = useChatStore();
-  
   const { user, encryptionKey } = useAppStore();
-  
-  const [messageInput, setMessageInput] = useState('');
-  const [showConversations, setShowConversations] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
+  const {
+    currentConversation,
+    conversations,
+    messages,
+    setCurrentConversation,
+    addMessage,
+    createConversation,
+  } = useChatStore();
 
-  // Load conversations on mount
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   useEffect(() => {
-    loadConversations();
-  }, []);
+    scrollToBottom();
+  }, [messages]);
 
-  const loadConversations = async () => {
-    if (!user || !encryptionKey) return;
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || !user || !encryptionKey || isLoading) return;
 
-    try {
-      const encryptedConversations = await ConversationQueries.getConversations(user.user_id);
-      const decryptedConversations = await Promise.all(
-        encryptedConversations.map(conv => 
-          ConversationQueries.decryptConversation(conv, encryptionKey)
-        )
-      );
-
-      decryptedConversations.forEach(conv => {
-        addConversation(conv);
-      });
-
-      // Load messages for each conversation
-      for (const conv of decryptedConversations) {
-        const encryptedMessages = await MessageQueries.getMessages(conv.id);
-        const decryptedMessages = await MessageQueries.decryptMessages(encryptedMessages, encryptionKey);
-        // Set messages in store
-        useChatStore.getState().setMessages(conv.id, decryptedMessages);
-      }
-    } catch (error) {
-      console.error('Failed to load conversations:', error);
-    }
-  };
-
-  const startNewConversation = async () => {
-    if (!user || !encryptionKey) return;
+    const userMessage = input.trim();
+    setInput('');
+    setIsLoading(true);
+    setError(null);
 
     try {
-      const conversation = await ConversationQueries.createConversation(
-        user.user_id,
-        { title: 'New Chat' },
-        encryptionKey
-      );
-
-      const decryptedConversation = await ConversationQueries.decryptConversation(
-        conversation, 
-        encryptionKey
-      );
-
-      addConversation(decryptedConversation);
-      setCurrentConversation(decryptedConversation.id);
-    } catch (error) {
-      console.error('Failed to create conversation:', error);
-      Alert.alert('Error', 'Failed to start new conversation');
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!messageInput.trim() || !user || !encryptionKey) return;
-
-    const userMessage = messageInput.trim();
-    setMessageInput('');
-
-    // Start new conversation if none exists
-    let conversationId = currentConversation;
-    if (!conversationId) {
-      try {
-        const conversation = await ConversationQueries.createConversation(
-          user.user_id,
-          { title: userMessage.substring(0, 50) },
-          encryptionKey
-        );
-
-        const decryptedConversation = await ConversationQueries.decryptConversation(
-          conversation, 
-          encryptionKey
-        );
-
-        addConversation(decryptedConversation);
-        conversationId = decryptedConversation.id;
-        setCurrentConversation(conversationId);
-      } catch (error) {
-        console.error('Failed to create conversation:', error);
-        Alert.alert('Error', 'Failed to start conversation');
-        return;
-      }
-    }
-
-    // Add user message
-    const userMessageData: MessagePlain = {
-      id: Date.now().toString(), // Temporary ID
-      conversation_id: conversationId,
-      user_id: user.user_id,
-      created_at: new Date().toISOString(),
-      role: 'user',
-      body: userMessage,
-    };
-
-    addMessage(conversationId, userMessageData);
-
-    // Save user message to database
-    try {
-      await MessageQueries.createMessage(user.user_id, {
-        conversation_id: conversationId,
-        role: 'user',
+      // Add user message to conversation
+      const userMsg = {
+        id: `temp-${Date.now()}`,
+        conversation_id: currentConversation?.id || '',
+        user_id: user.user_id,
+        role: 'user' as const,
         body: userMessage,
-      }, encryptionKey);
-    } catch (error) {
-      console.error('Failed to save user message:', error);
-    }
+        created_at: new Date().toISOString(),
+      };
 
-    // Generate AI response
-    await generateAIResponse(conversationId, userMessage);
-  };
+      addMessage(userMsg);
 
-  const generateAIResponse = async (conversationId: string, userMessage: string) => {
-    if (!encryptionKey) return;
-
-    setGenerating(true);
-
-    try {
       // Search for relevant entries
-      const searchResults = await searchIndexer.search({
-        query: userMessage,
-        limit: 8,
-      });
-
+      const searchResults = await searchIndexer.search(userMessage, 8);
+      
       // Get conversation history
-      const conversationMessages = getCurrentMessages();
+      const conversationHistory = messages.slice(-10); // Last 10 messages
 
       // Generate AI response
-      const response = await llmService.generateResponse({
-        entries: searchResults,
-        conversationHistory: conversationMessages,
-        userMessage,
-        maxTokens: 200,
-      }, user.user_id);
+      const aiResponse = await llmService.generateResponse(
+        {
+          entries: searchResults,
+          conversationHistory: conversationHistory.map(msg => ({
+            role: msg.role,
+            body: msg.body,
+            created_at: msg.created_at,
+          })),
+          userMessage,
+          maxTokens: 200,
+        },
+        user.user_id
+      );
 
       // Add AI message
-      const aiMessageData: MessagePlain = {
-        id: (Date.now() + 1).toString(), // Temporary ID
-        conversation_id: conversationId,
-        user_id: user!.user_id,
+      const aiMsg = {
+        id: `temp-ai-${Date.now()}`,
+        conversation_id: currentConversation?.id || '',
+        user_id: user.user_id,
+        role: 'assistant' as const,
+        body: aiResponse.content,
         created_at: new Date().toISOString(),
-        role: 'assistant',
-        body: response.content,
       };
 
-      addMessage(conversationId, aiMessageData);
+      addMessage(aiMsg);
 
-      // Save AI message to database
-      await MessageQueries.createMessage(user!.user_id, {
-        conversation_id: conversationId,
-        role: 'assistant',
-        body: response.content,
-      }, encryptionKey);
+      // Save both messages to database
+      if (currentConversation) {
+        // Encrypt and save user message
+        const encryptedUserBody = await encrypt(userMessage, encryptionKey);
+        await MessageQueries.createMessage({
+          conversation_id: currentConversation.id,
+          user_id: user.user_id,
+          role: 'user',
+          body_enc: encryptedUserBody.ciphertext,
+          iv: encryptedUserBody.iv,
+        });
+
+        // Encrypt and save AI message
+        const encryptedAiBody = await encrypt(aiResponse.content, encryptionKey);
+        await MessageQueries.createMessage({
+          conversation_id: currentConversation.id,
+          user_id: user.user_id,
+          role: 'assistant',
+          body_enc: encryptedAiBody.ciphertext,
+          iv: encryptedAiBody.iv,
+        });
+      }
 
     } catch (error) {
-      console.error('Failed to generate AI response:', error);
-      
-      // Add error message
-      const errorMessage: MessagePlain = {
-        id: (Date.now() + 1).toString(),
-        conversation_id: conversationId,
-        user_id: user!.user_id,
-        created_at: new Date().toISOString(),
-        role: 'assistant',
-        body: "I'm having trouble connecting right now. Please try again in a moment.",
-      };
-
-      addMessage(conversationId, errorMessage);
+      logger.error('Chat error:', error);
+      setError(error instanceof Error ? error.message : 'Failed to send message');
     } finally {
-      setGenerating(false);
+      setIsLoading(false);
     }
   };
 
-  const renderMessage = ({ item }: { item: ChatMessage }) => (
-    <View className={`mb-4 ${item.role === 'user' ? 'items-end' : 'items-start'}`}>
-      <View
-        className={`max-w-[80%] rounded-lg px-4 py-3 ${
-          item.role === 'user'
-            ? 'bg-blue-500'
-            : 'bg-gray-100'
-        }`}
-      >
-        <Text
-          className={`text-sm ${
-            item.role === 'user' ? 'text-white' : 'text-gray-900'
-          }`}
-        >
-          {item.body}
-        </Text>
-      </View>
-      <Text className="text-xs text-gray-500 mt-1">
-        {new Date(item.created_at).toLocaleTimeString()}
-      </Text>
-    </View>
-  );
+  const handleNewConversation = async () => {
+    if (!user) return;
 
-  const renderConversationItem = ({ item }: { item: ConversationPlain }) => (
-    <TouchableOpacity
-      className={`p-4 border-b border-gray-200 ${
-        currentConversation === item.id ? 'bg-blue-50' : ''
-      }`}
-      onPress={() => setCurrentConversation(item.id)}
-    >
-      <Text className="font-medium text-gray-900" numberOfLines={1}>
-        {item.title || 'Untitled Chat'}
-      </Text>
-      <Text className="text-sm text-gray-500 mt-1">
-        {new Date(item.created_at).toLocaleDateString()}
-      </Text>
-    </TouchableOpacity>
-  );
+    try {
+      const conversation = await createConversation(user.user_id, 'New Conversation');
+      setCurrentConversation(conversation);
+    } catch (error) {
+      logger.error('Failed to create conversation:', error);
+      setError('Failed to create new conversation');
+    }
+  };
 
-  const currentMessages = currentConversation ? (messages[currentConversation] || []) : [];
+  const formatTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
-        <TouchableOpacity
-          className="flex-row items-center"
-          onPress={() => setShowConversations(!showConversations)}
-        >
-          <Ionicons name="menu" size={24} color="#374151" />
-          <Text className="ml-2 font-medium text-gray-900">
-            {currentConversation ? 'Chat' : 'Conversations'}
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          className="bg-blue-500 rounded-full p-2"
-          onPress={startNewConversation}
-        >
-          <Ionicons name="add" size={20} color="white" />
-        </TouchableOpacity>
-      </View>
+    <div className="max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">AI Chat</h1>
+        <p className="text-gray-600">Talk about your journal entries with AI</p>
+      </div>
 
-      {showConversations ? (
-        // Conversations List
-        <View className="flex-1">
-          <FlatList
-            data={conversations}
-            renderItem={renderConversationItem}
-            keyExtractor={(item) => item.id}
-            ListEmptyComponent={
-              <View className="flex-1 justify-center items-center p-8">
-                <Ionicons name="chatbubbles-outline" size={64} color="#9ca3af" />
-                <Text className="text-gray-500 text-center mt-4">
-                  No conversations yet.{'\n'}Start a new chat to begin!
-                </Text>
-              </View>
-            }
-          />
-        </View>
-      ) : (
-        // Chat Interface
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          className="flex-1"
-        >
-          {currentConversation ? (
-            <>
-              {/* Messages */}
-              <FlatList
-                ref={flatListRef}
-                className="flex-1 px-4"
-                data={currentMessages}
-                renderItem={renderMessage}
-                keyExtractor={(item) => item.id}
-                onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
-                ListEmptyComponent={
-                  <View className="flex-1 justify-center items-center p-8">
-                    <Ionicons name="chatbubble-outline" size={64} color="#9ca3af" />
-                    <Text className="text-gray-500 text-center mt-4">
-                      Start a conversation!{'\n'}Ask me anything about your journal entries.
-                    </Text>
-                  </View>
-                }
-              />
-
-              {/* Message Input */}
-              <View className="flex-row items-center px-4 py-3 border-t border-gray-200 bg-white">
-                <TextInput
-                  className="flex-1 border border-gray-300 rounded-full px-4 py-2 mr-3"
-                  placeholder="Type a message..."
-                  value={messageInput}
-                  onChangeText={setMessageInput}
-                  multiline
-                  maxLength={4000}
-                />
-                <TouchableOpacity
-                  className={`rounded-full p-3 ${
-                    !messageInput.trim() || isGenerating
-                      ? 'bg-gray-300'
-                      : 'bg-blue-500'
-                  }`}
-                  onPress={sendMessage}
-                  disabled={!messageInput.trim() || isGenerating}
-                >
-                  <Ionicons 
-                    name={isGenerating ? "hourglass-outline" : "send"} 
-                    size={20} 
-                    color="white" 
-                  />
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : (
-            // Welcome Screen
-            <View className="flex-1 justify-center items-center p-8">
-              <Ionicons name="chatbubbles" size={80} color="#0ea5e9" />
-              <Text className="text-2xl font-bold text-gray-900 mt-4">
-                Chat with Your Journal
-              </Text>
-              <Text className="text-gray-600 text-center mt-2 mb-8">
-                Ask questions about your past entries, explore patterns, or just have a conversation about your thoughts and feelings.
-              </Text>
-              <TouchableOpacity
-                className="bg-blue-500 rounded-lg px-6 py-3"
-                onPress={startNewConversation}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-200px)]">
+        {/* Conversations Sidebar */}
+        <div className="lg:col-span-1">
+          <div className="card h-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Conversations</h2>
+              <button
+                onClick={handleNewConversation}
+                className="btn btn-primary text-sm"
               >
-                <Text className="text-white font-medium">Start New Chat</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </KeyboardAvoidingView>
-      )}
-    </SafeAreaView>
+                New Chat
+              </button>
+            </div>
+            
+            <div className="space-y-2 overflow-y-auto">
+              {conversations.map((conv) => (
+                <button
+                  key={conv.id}
+                  onClick={() => setCurrentConversation(conv)}
+                  className={`w-full text-left p-3 rounded-lg transition-colors ${
+                    currentConversation?.id === conv.id
+                      ? 'bg-primary-100 text-primary-900'
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="font-medium truncate">{conv.title}</div>
+                  <div className="text-sm text-gray-500">
+                    {new Date(conv.created_at).toLocaleDateString()}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Chat Area */}
+        <div className="lg:col-span-3">
+          <div className="card h-full flex flex-col">
+            {currentConversation ? (
+              <>
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto space-y-4 mb-4">
+                  {messages.length === 0 ? (
+                    <div className="text-center text-gray-500 py-8">
+                      <MessageCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>Start a conversation about your journal entries</p>
+                    </div>
+                  ) : (
+                    messages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[80%] rounded-lg p-3 ${
+                            message.role === 'user'
+                              ? 'bg-primary-600 text-white'
+                              : 'bg-gray-100 text-gray-900'
+                          }`}
+                        >
+                          <div className="flex items-start space-x-2">
+                            {message.role === 'assistant' && (
+                              <Bot className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                            )}
+                            {message.role === 'user' && (
+                              <User className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                            )}
+                            <div className="flex-1">
+                              <p className="text-sm whitespace-pre-wrap">{message.body}</p>
+                              <p
+                                className={`text-xs mt-1 ${
+                                  message.role === 'user' ? 'text-primary-200' : 'text-gray-500'
+                                }`}
+                              >
+                                {formatTime(message.created_at)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input */}
+                <form onSubmit={handleSendMessage} className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Ask about your journal entries..."
+                    className="input flex-1"
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!input.trim() || isLoading}
+                    className="btn btn-primary"
+                  >
+                    {isLoading ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center text-gray-500">
+                  <MessageCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>Select a conversation or start a new one</p>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-4 bg-red-50 border border-red-200 rounded-md p-3">
+                <p className="text-sm text-red-600">{error}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -1,100 +1,65 @@
 import { create } from 'zustand';
-import { WriteState, EntryCreate } from '../data/schemas';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { localStorage } from '../utils/storage';
 
-interface WriteStore extends WriteState {
+interface WriteStore {
+  // Form state
+  title: string;
+  body: string;
+  mood: number;
+  tags: string[];
+  
   // Actions
-  setCurrentEntry: (entry: Partial<EntryCreate>) => void;
-  updateCurrentEntry: (updates: Partial<EntryCreate>) => void;
-  clearCurrentEntry: () => void;
-  setDraft: (isDraft: boolean) => void;
-  setSaving: (saving: boolean) => void;
-  
-  // Validation
-  validateEntry: () => { isValid: boolean; errors: string[] };
-  
-  // Auto-save
-  lastAutoSave: string | null;
-  setLastAutoSave: (timestamp: string) => void;
+  setTitle: (title: string) => void;
+  setBody: (body: string) => void;
+  setMood: (mood: number) => void;
+  setTags: (tags: string[]) => void;
+  addTag: (tag: string) => void;
+  removeTag: (index: number) => void;
+  clearForm: () => void;
 }
 
-const initialEntry: Partial<EntryCreate> = {
-  title: '',
-  body: '',
-  mood: undefined,
-  tags: [],
-  entry_at: new Date().toISOString(),
-};
+export const useWriteStore = create<WriteStore>()(
+  persist(
+    (set, get) => ({
+      // Initial state
+      title: '',
+      body: '',
+      mood: 0,
+      tags: [],
 
-export const useWriteStore = create<WriteStore>((set, get) => ({
-  // Initial state
-  currentEntry: { ...initialEntry },
-  isDraft: true,
-  isSaving: false,
-  lastAutoSave: null,
-
-  // Actions
-  setCurrentEntry: (entry) => set({ 
-    currentEntry: { ...entry },
-    isDraft: true 
-  }),
-
-  updateCurrentEntry: (updates) => set((state) => ({
-    currentEntry: { ...state.currentEntry, ...updates },
-    isDraft: true
-  })),
-
-  clearCurrentEntry: () => set({ 
-    currentEntry: { ...initialEntry },
-    isDraft: true,
-    lastAutoSave: null
-  }),
-
-  setDraft: (isDraft) => set({ isDraft }),
-
-  setSaving: (saving) => set({ isSaving: saving }),
-
-  validateEntry: () => {
-    const { currentEntry } = get();
-    const errors: string[] = [];
-
-    if (!currentEntry.title || currentEntry.title.trim().length === 0) {
-      errors.push('Title is required');
-    }
-
-    if (!currentEntry.body || currentEntry.body.trim().length === 0) {
-      errors.push('Entry content is required');
-    }
-
-    if (currentEntry.title && currentEntry.title.length > 200) {
-      errors.push('Title must be less than 200 characters');
-    }
-
-    if (currentEntry.body && currentEntry.body.length > 50000) {
-      errors.push('Entry content must be less than 50,000 characters');
-    }
-
-    if (currentEntry.mood !== undefined && (currentEntry.mood < -5 || currentEntry.mood > 5)) {
-      errors.push('Mood must be between -5 and 5');
-    }
-
-    if (currentEntry.tags && currentEntry.tags.length > 10) {
-      errors.push('Maximum 10 tags allowed');
-    }
-
-    if (currentEntry.tags) {
-      for (const tag of currentEntry.tags) {
-        if (tag.length === 0 || tag.length > 50) {
-          errors.push('Tags must be between 1 and 50 characters');
-          break;
+      // Actions
+      setTitle: (title) => set({ title }),
+      setBody: (body) => set({ body }),
+      setMood: (mood) => set({ mood }),
+      setTags: (tags) => set({ tags }),
+      
+      addTag: (tag) => {
+        const { tags } = get();
+        if (!tags.includes(tag) && tags.length < 10) {
+          set({ tags: [...tags, tag] });
         }
-      }
+      },
+      
+      removeTag: (index) => {
+        const { tags } = get();
+        set({ tags: tags.filter((_, i) => i !== index) });
+      },
+      
+      clearForm: () => set({
+        title: '',
+        body: '',
+        mood: 0,
+        tags: [],
+      }),
+    }),
+    {
+      name: 'thera-write-store',
+      storage: createJSONStorage(() => ({
+        getItem: (name) => localStorage.getItem(name),
+        setItem: (name, value) => localStorage.setItem(name, value),
+        removeItem: (name) => localStorage.removeItem(name),
+      })),
     }
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
-  },
-
-  setLastAutoSave: (timestamp) => set({ lastAutoSave: timestamp }),
-}));
+  )
+);

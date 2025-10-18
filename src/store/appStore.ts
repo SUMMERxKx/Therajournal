@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { localStorage } from '../utils/storage';
 import { AppState, User } from '../data/schemas';
 import { getCurrentUser, signOut } from '../auth/auth';
 import { CryptoKey } from '../utils/types';
@@ -31,15 +31,23 @@ interface AppStore extends AppState {
   updateSettings: (settings: Partial<AppStore['settings']>) => void;
 }
 
+// Mock user for demo purposes
+const mockUser: User = {
+  user_id: 'demo-user-123',
+  email: 'demo@therajournal.com',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
-      // Initial state
-      user: null,
-      isAuthenticated: false,
+      // Demo state - user is always authenticated
+      user: mockUser,
+      isAuthenticated: true,
       isLoading: false,
       offlineMode: false,
-      lastSyncAt: null,
+      lastSyncAt: new Date().toISOString(),
       encryptionKey: null,
       
       settings: {
@@ -69,10 +77,10 @@ export const useAppStore = create<AppStore>()(
       logout: async () => {
         try {
           set({ isLoading: true });
-          await signOut();
+          // For demo, just reset to mock user
           set({ 
-            user: null, 
-            isAuthenticated: false, 
+            user: mockUser, 
+            isAuthenticated: true, 
             encryptionKey: null,
             isLoading: false 
           });
@@ -83,25 +91,12 @@ export const useAppStore = create<AppStore>()(
       },
 
       checkAuth: async () => {
-        try {
-          set({ isLoading: true });
-          const { user, error } = await getCurrentUser();
-          
-          if (error) {
-            logger.error('Auth check error:', error);
-            set({ user: null, isAuthenticated: false, isLoading: false });
-            return;
-          }
-
-          set({ 
-            user, 
-            isAuthenticated: !!user, 
-            isLoading: false 
-          });
-        } catch (error) {
-          logger.error('Auth check failed:', error);
-          set({ user: null, isAuthenticated: false, isLoading: false });
-        }
+        // For demo, always return authenticated
+        set({ 
+          user: mockUser, 
+          isAuthenticated: true, 
+          isLoading: false 
+        });
       },
 
       setEncryptionKey: (key) => set({ encryptionKey: key }),
@@ -112,7 +107,11 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: 'thera-app-store',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => ({
+        getItem: (name) => localStorage.getItem(name),
+        setItem: (name, value) => localStorage.setItem(name, value),
+        removeItem: (name) => localStorage.removeItem(name),
+      })),
       partialize: (state) => ({
         settings: state.settings,
         // Don't persist sensitive data like encryption keys

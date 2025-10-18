@@ -1,9 +1,10 @@
 /**
- * Production-safe logging utility
+ * Production-safe logging utility for web
  * Logs are only shown in development mode
  */
 
-const IS_DEV = __DEV__;
+// Use Vite's import.meta.env.DEV instead of React Native's __DEV__
+const IS_DEV = import.meta.env.DEV;
 
 export const logger = {
   log: (...args: any[]) => {
@@ -12,13 +13,9 @@ export const logger = {
     }
   },
 
-  error: (...args: any[]) => {
+  info: (...args: any[]) => {
     if (IS_DEV) {
-      console.error('[TheraJournal ERROR]', ...args);
-    } else {
-      // In production, you could send to error tracking service (Sentry, etc.)
-      // For now, we'll keep critical errors visible
-      console.error('[TheraJournal ERROR]', ...args);
+      console.info('[TheraJournal]', ...args);
     }
   },
 
@@ -26,6 +23,11 @@ export const logger = {
     if (IS_DEV) {
       console.warn('[TheraJournal WARN]', ...args);
     }
+  },
+
+  error: (...args: any[]) => {
+    // Always log errors, even in production
+    console.error('[TheraJournal ERROR]', ...args);
   },
 
   debug: (...args: any[]) => {
@@ -36,4 +38,3 @@ export const logger = {
 };
 
 export default logger;
-

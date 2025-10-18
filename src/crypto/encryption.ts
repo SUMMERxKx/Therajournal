@@ -1,13 +1,13 @@
 import { CRYPTO_ALGORITHM, CRYPTO_KEY_LENGTH, IV_LENGTH, SALT_LENGTH } from '../utils/constants';
 import { EncryptedData, CryptoKeys } from '../utils/types';
-import * as SecureStore from 'expo-secure-store';
+import { localStorage, sessionStorage, webCrypto } from '../utils/storage';
 import { STORAGE_KEYS } from '../utils/constants';
 
 /**
  * Generate a random Data Encryption Key (DEK)
  */
 export async function generateDEK(): Promise<CryptoKey> {
-  return await crypto.subtle.generateKey(
+  return await webCrypto.subtle.generateKey(
     {
       name: CRYPTO_ALGORITHM,
       length: CRYPTO_KEY_LENGTH,
@@ -21,16 +21,15 @@ export async function generateDEK(): Promise<CryptoKey> {
  * Generate a random IV for encryption
  */
 export function generateIV(): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  return webCrypto.getRandomValues(new Uint8Array(IV_LENGTH));
 }
 
 /**
- * Derive a Key Encryption Key (KEK) from a passphrase using Argon2id
- * Note: For MVP, we'll use PBKDF2 as it's more widely supported
+ * Derive a Key Encryption Key (KEK) from a passphrase using PBKDF2
  */
 export async function deriveKEK(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
   const encoder = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
+  const keyMaterial = await webCrypto.subtle.importKey(
     'raw',
     encoder.encode(passphrase),
     'PBKDF2',
@@ -38,7 +37,7 @@ export async function deriveKEK(passphrase: string, salt: Uint8Array): Promise<C
     ['deriveBits', 'deriveKey']
   );
 
-  return await crypto.subtle.deriveKey(
+  return await webCrypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: salt,
@@ -59,7 +58,7 @@ export async function deriveKEK(passphrase: string, salt: Uint8Array): Promise<C
  * Generate a random salt for key derivation
  */
 export function generateSalt(): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+  return webCrypto.getRandomValues(new Uint8Array(SALT_LENGTH));
 }
 
 /**
@@ -75,7 +74,7 @@ export async function encrypt(
   
   const encryptionIV = iv || generateIV();
   
-  const ciphertext = await crypto.subtle.encrypt(
+  const ciphertext = await webCrypto.subtle.encrypt(
     {
       name: CRYPTO_ALGORITHM,
       iv: encryptionIV,
@@ -97,7 +96,7 @@ export async function decrypt(
   encryptedData: EncryptedData,
   key: CryptoKey
 ): Promise<string> {
-  const decryptedBuffer = await crypto.subtle.decrypt(
+  const decryptedBuffer = await webCrypto.subtle.decrypt(
     {
       name: CRYPTO_ALGORITHM,
       iv: encryptedData.iv,
@@ -114,8 +113,8 @@ export async function decrypt(
  * Wrap a DEK with a KEK for secure storage
  */
 export async function wrapDEK(dek: CryptoKey, kek: CryptoKey): Promise<Uint8Array> {
-  const exportedDEK = await crypto.subtle.exportKey('raw', dek);
-  const wrapped = await crypto.subtle.encrypt(
+  const exportedDEK = await webCrypto.subtle.exportKey('raw', dek);
+  const wrapped = await webCrypto.subtle.encrypt(
     {
       name: CRYPTO_ALGORITHM,
       length: CRYPTO_KEY_LENGTH,
@@ -131,7 +130,7 @@ export async function wrapDEK(dek: CryptoKey, kek: CryptoKey): Promise<Uint8Arra
  * Unwrap a DEK using a KEK
  */
 export async function unwrapDEK(wrappedDEK: Uint8Array, kek: CryptoKey): Promise<CryptoKey> {
-  const unwrapped = await crypto.subtle.decrypt(
+  const unwrapped = await webCrypto.subtle.decrypt(
     {
       name: CRYPTO_ALGORITHM,
       length: CRYPTO_KEY_LENGTH,
@@ -140,7 +139,7 @@ export async function unwrapDEK(wrappedDEK: Uint8Array, kek: CryptoKey): Promise
     wrappedDEK
   );
 
-  return await crypto.subtle.importKey(
+  return await webCrypto.subtle.importKey(
     'raw',
     unwrapped,
     {
@@ -153,7 +152,8 @@ export async function unwrapDEK(wrappedDEK: Uint8Array, kek: CryptoKey): Promise
 }
 
 /**
- * Store encrypted DEK in SecureStore
+ * Store encrypted DEK in localStorage (web equivalent of SecureStore)
+ * Note: This is less secure than mobile SecureStore but necessary for web
  */
 export async function storeEncryptedDEK(
   wrappedDEK: Uint8Array,
@@ -162,16 +162,17 @@ export async function storeEncryptedDEK(
   const wrappedHex = Array.from(wrappedDEK).map(b => b.toString(16).padStart(2, '0')).join('');
   const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('');
   
-  await SecureStore.setItemAsync(STORAGE_KEYS.DEK, wrappedHex);
-  await SecureStore.setItemAsync(STORAGE_KEYS.KEK_SALT, saltHex);
+  // Store in sessionStorage for better security (cleared on browser close)
+  sessionStorage.setItem(STORAGE_KEYS.DEK, wrappedHex);
+  sessionStorage.setItem(STORAGE_KEYS.KEK_SALT, saltHex);
 }
 
 /**
- * Retrieve and decrypt DEK from SecureStore
+ * Retrieve and decrypt DEK from storage
  */
 export async function retrieveEncryptedDEK(passphrase: string): Promise<CryptoKey> {
-  const wrappedHex = await SecureStore.getItemAsync(STORAGE_KEYS.DEK);
-  const saltHex = await SecureStore.getItemAsync(STORAGE_KEYS.KEK_SALT);
+  const wrappedHex = sessionStorage.getItem(STORAGE_KEYS.DEK);
+  const saltHex = sessionStorage.getItem(STORAGE_KEYS.KEK_SALT);
   
   if (!wrappedHex || !saltHex) {
     throw new Error('No encrypted DEK found in storage');
@@ -190,32 +191,33 @@ export async function retrieveEncryptedDEK(passphrase: string): Promise<CryptoKe
 }
 
 /**
- * Store DEK directly in device keystore (simpler but device-dependent)
+ * Store DEK directly in sessionStorage (simpler but less secure than mobile)
  */
 export async function storeDEKInKeystore(dek: CryptoKey): Promise<void> {
-  const exportedDEK = await crypto.subtle.exportKey('raw', dek);
+  const exportedDEK = await webCrypto.subtle.exportKey('raw', dek);
   const dekHex = Array.from(new Uint8Array(exportedDEK))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
   
-  await SecureStore.setItemAsync(STORAGE_KEYS.DEK, dekHex);
+  // Use sessionStorage for better security
+  sessionStorage.setItem(STORAGE_KEYS.DEK, dekHex);
 }
 
 /**
- * Retrieve DEK from device keystore
+ * Retrieve DEK from storage
  */
 export async function retrieveDEKFromKeystore(): Promise<CryptoKey> {
-  const dekHex = await SecureStore.getItemAsync(STORAGE_KEYS.DEK);
+  const dekHex = sessionStorage.getItem(STORAGE_KEYS.DEK);
   
   if (!dekHex) {
-    throw new Error('No DEK found in device keystore');
+    throw new Error('No DEK found in storage');
   }
 
   const dekBytes = new Uint8Array(
     dekHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16))
   );
 
-  return await crypto.subtle.importKey(
+  return await webCrypto.subtle.importKey(
     'raw',
     dekBytes,
     {
@@ -231,15 +233,15 @@ export async function retrieveDEKFromKeystore(): Promise<CryptoKey> {
  * Clear all stored keys (for logout/reset)
  */
 export async function clearStoredKeys(): Promise<void> {
-  await SecureStore.deleteItemAsync(STORAGE_KEYS.DEK);
-  await SecureStore.deleteItemAsync(STORAGE_KEYS.KEK_SALT);
+  sessionStorage.removeItem(STORAGE_KEYS.DEK);
+  sessionStorage.removeItem(STORAGE_KEYS.KEK_SALT);
 }
 
 /**
  * Check if keys are stored
  */
 export async function hasStoredKeys(): Promise<boolean> {
-  const dek = await SecureStore.getItemAsync(STORAGE_KEYS.DEK);
+  const dek = sessionStorage.getItem(STORAGE_KEYS.DEK);
   return dek !== null;
 }
 

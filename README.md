@@ -1,6 +1,6 @@
-# TheraJournal
+# TheraJournal Web
 
-A privacy-first, AI-powered journaling app built with React Native and Expo. Your thoughts stay encrypted on your device, and AI helps you reflect on patterns in your entries.
+A privacy-first, AI-powered journaling web application with end-to-end encryption. Your thoughts stay encrypted on your device, and AI helps you reflect on patterns in your entries.
 
 ## 🔒 Privacy & Security
 
@@ -27,7 +27,7 @@ A privacy-first, AI-powered journaling app built with React Native and Expo. You
 
 ### Prerequisites
 - Node.js 18+ 
-- Expo CLI (`npm install -g @expo/cli`)
+- npm or yarn
 - Supabase account
 
 ### Setup
@@ -46,26 +46,27 @@ A privacy-first, AI-powered journaling app built with React Native and Expo. You
 
 3. **Configure Environment**
    ```bash
-   cp env.example .env
+   cp .env.example .env
    # Edit .env with your Supabase credentials
    ```
 
 4. **Start Development**
    ```bash
-   npm start
+   npm run dev
    ```
 
 ## 🏗️ Architecture
 
 ### Tech Stack
-- **Frontend**: React Native (Expo) + TypeScript
-- **Styling**: NativeWind (Tailwind CSS)
+- **Frontend**: React 18 + TypeScript + Vite
+- **Styling**: Tailwind CSS
 - **State**: Zustand + TanStack Query
 - **Database**: Supabase (PostgreSQL)
 - **Auth**: Supabase Auth
 - **Search**: MiniSearch (BM25)
 - **AI**: Groq, Hugging Face, Ollama (all free!)
 - **Encryption**: Web Crypto API (AES-GCM)
+- **Storage**: IndexedDB + localStorage
 
 ### Project Structure
 ```
@@ -76,10 +77,11 @@ src/
 ├── data/          # Database queries and Zod schemas
 ├── search/        # MiniSearch indexing and retrieval
 ├── ai/            # LLM integration and prompt management
-├── screens/       # React Native screens
+├── screens/       # React components (pages)
 ├── components/    # Reusable UI components
 ├── store/         # Zustand state management
-└── utils/         # Types and constants
+├── utils/         # Types, constants, and utilities
+└── styles/        # CSS and styling
 ```
 
 ## 🔐 Security Implementation
@@ -87,8 +89,8 @@ src/
 ### Encryption Flow
 1. **Key Generation**: AES-256-GCM key generated on device
 2. **Key Storage**: 
-   - Option 1: Device keystore (simple, device-dependent)
-   - Option 2: Passphrase-wrapped with Argon2id (cross-device)
+   - Option 1: SessionStorage (simple, cleared on browser close)
+   - Option 2: Passphrase-wrapped with PBKDF2 (cross-session)
 3. **Data Encryption**: All text fields encrypted before database storage
 4. **Zero-Knowledge**: Server only sees ciphertext + IV
 
@@ -108,7 +110,7 @@ src/
 ### Infrastructure
 - **Supabase**: Free tier supports early users
 - **No Vector DB**: Uses local BM25 instead of embeddings
-- **Edge Functions**: Near-free at small scale
+- **Static Hosting**: Can be deployed to Vercel, Netlify, etc.
 
 ## 📱 User Flows
 
@@ -139,31 +141,33 @@ src/
 4. **Encryption**: Use utilities from `src/crypto/`
 
 ### Testing
-- Unit tests for crypto functions
-- Integration tests for Supabase queries
-- E2E tests for complete user flows
+```bash
+npm run type-check    # TypeScript type checking
+npm run lint          # ESLint code linting
+```
 
 ### Building
 ```bash
-# Android
-npm run build:android
-
-# iOS  
-npm run build:ios
+npm run build         # Build for production
+npm run preview       # Preview production build
 ```
 
 ## 🚀 Deployment
 
-### Supabase Setup
-1. Create project and run schema
-2. Configure RLS policies
-3. Set up auth providers
-4. Add environment variables
+### Vercel (Recommended)
+1. Connect your GitHub repository to Vercel
+2. Set environment variables in Vercel dashboard
+3. Deploy automatically on push to main
 
-### App Store
-1. Configure app.json with bundle IDs
-2. Build with EAS Build
-3. Submit to App Store/Play Store
+### Netlify
+1. Connect your GitHub repository to Netlify
+2. Set environment variables in Netlify dashboard
+3. Deploy automatically on push to main
+
+### Manual Deployment
+1. Build the project: `npm run build`
+2. Upload the `dist` folder to your web server
+3. Configure environment variables on your server
 
 ## 🤝 Contributing
 
@@ -189,13 +193,13 @@ MIT License - see LICENSE file for details
 - ✅ Core journaling with encryption
 - ✅ AI chat with local search
 - ✅ Weekly reflections
-- ✅ Mobile app (iOS/Android)
+- ✅ Web application
 
 ### Phase 2 (Future)
 - Voice-to-text journaling
 - Advanced analytics and insights
 - Multi-device sync with passphrase
-- Desktop app (Electron)
+- Progressive Web App (PWA)
 
 ### Phase 3 (Advanced)
 - Vector embeddings for better search
