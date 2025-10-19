@@ -47,14 +47,71 @@ export async function signUp(data: SignUp): Promise<AuthResult> {
     // We need to wait a moment for the trigger to fire
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('user_id', authData.user.id)
-      .single();
+    // Try to get user profile, with retry logic
+    let userData = null;
+    let userError = null;
+    
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .maybeSingle(); // Use maybeSingle() instead of single()
+      
+      if (data && !error) {
+        userData = data;
+        break;
+      }
+      
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
+        userError = error;
+        break;
+      }
+      
+      // Wait a bit more and try again
+      if (attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
 
     if (userError) {
       return { user: null, error: userError.message };
+    }
+
+    if (!userData) {
+      // If no user profile was created, the trigger might have failed
+      // Let's try to create one with a longer wait and different approach
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Try one more time to get the user profile
+      const { data: retryData, error: retryError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .maybeSingle();
+      
+      if (retryData) {
+        userData = retryData;
+      } else {
+        // If still no profile, try to create one using the database function
+        const { data: functionResult, error: functionError } = await supabase
+          .rpc('create_user_profile', { user_uuid: authData.user.id });
+        
+        if (functionResult && !functionError) {
+          userData = functionResult;
+        } else {
+          // If all else fails, return the auth user data without the profile
+          return { 
+            user: {
+              user_id: authData.user.id,
+              email: authData.user.email || '',
+              created_at: authData.user.created_at,
+              tz: 'America/Vancouver'
+            }, 
+            error: null 
+          };
+        }
+      }
     }
 
     return { user: userData, error: null };
@@ -88,10 +145,24 @@ export async function signIn(data: SignIn): Promise<AuthResult> {
       .from('users')
       .select('*')
       .eq('user_id', authData.user.id)
-      .single();
+      .maybeSingle(); // Use maybeSingle() instead of single()
 
     if (userError) {
       return { user: null, error: userError.message };
+    }
+
+    if (!userData) {
+      // If no user profile exists, return auth user data
+      // The profile will be created by the trigger on next interaction
+      return { 
+        user: {
+          user_id: authData.user.id,
+          email: authData.user.email || '',
+          created_at: authData.user.created_at,
+          tz: 'America/Vancouver'
+        }, 
+        error: null 
+      };
     }
 
     return { user: userData, error: null };
@@ -139,10 +210,24 @@ export async function getCurrentUser(): Promise<AuthResult> {
       .from('users')
       .select('*')
       .eq('user_id', authUser.id)
-      .single();
+      .maybeSingle(); // Use maybeSingle() instead of single()
 
     if (userError) {
       return { user: null, error: userError.message };
+    }
+
+    if (!userData) {
+      // If no user profile exists, return auth user data
+      // The profile will be created by the trigger on next interaction
+      return { 
+        user: {
+          user_id: authUser.id,
+          email: authUser.email || '',
+          created_at: authUser.created_at,
+          tz: 'America/Vancouver'
+        }, 
+        error: null 
+      };
     }
 
     return { user: userData, error: null };

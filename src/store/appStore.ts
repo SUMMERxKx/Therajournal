@@ -3,7 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { localStorage } from '../utils/storage';
 import { AppState, User } from '../data/schemas';
 import { getCurrentUser, signOut } from '../auth/auth';
-import { CryptoKey } from '../utils/types';
+import { CryptoKeys } from '../utils/types';
 import logger from '../utils/logger';
 
 interface AppStore extends AppState {
@@ -17,8 +17,8 @@ interface AppStore extends AppState {
   checkAuth: () => Promise<void>;
   
   // Encryption
-  encryptionKey: CryptoKey | null;
-  setEncryptionKey: (key: CryptoKey | null) => void;
+  encryptionKey: CryptoKeys | null;
+  setEncryptionKey: (key: CryptoKeys | null) => void;
   
   // Settings
   settings: {
@@ -31,23 +31,15 @@ interface AppStore extends AppState {
   updateSettings: (settings: Partial<AppStore['settings']>) => void;
 }
 
-// Mock user for demo purposes
-const mockUser: User = {
-  user_id: 'demo-user-123',
-  email: 'demo@therajournal.com',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-};
-
 export const useAppStore = create<AppStore>()(
   persist(
-    (set, get) => ({
-      // Demo state - user is always authenticated
-      user: mockUser,
-      isAuthenticated: true,
-      isLoading: false,
+    (set) => ({
+      // Initial state
+      user: null,
+      isAuthenticated: false,
+      isLoading: true,
       offlineMode: false,
-      lastSyncAt: new Date().toISOString(),
+      lastSyncAt: null,
       encryptionKey: null,
       
       settings: {
@@ -77,10 +69,10 @@ export const useAppStore = create<AppStore>()(
       logout: async () => {
         try {
           set({ isLoading: true });
-          // For demo, just reset to mock user
+          await signOut();
           set({ 
-            user: mockUser, 
-            isAuthenticated: true, 
+            user: null, 
+            isAuthenticated: false, 
             encryptionKey: null,
             isLoading: false 
           });
@@ -91,12 +83,18 @@ export const useAppStore = create<AppStore>()(
       },
 
       checkAuth: async () => {
-        // For demo, always return authenticated
-        set({ 
-          user: mockUser, 
-          isAuthenticated: true, 
-          isLoading: false 
-        });
+        try {
+          set({ isLoading: true });
+          const result = await getCurrentUser();
+          set({ 
+            user: result.user, 
+            isAuthenticated: !!result.user, 
+            isLoading: false 
+          });
+        } catch (error) {
+          logger.error('Auth check failed:', error);
+          set({ user: null, isAuthenticated: false, isLoading: false });
+        }
       },
 
       setEncryptionKey: (key) => set({ encryptionKey: key }),

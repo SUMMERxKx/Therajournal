@@ -1,8 +1,6 @@
 -- TheraJournal Database Schema
 -- Run this in your Supabase SQL editor to set up the database
-
--- Enable Row Level Security
-ALTER DATABASE postgres SET "app.jwt_secret" TO 'your-jwt-secret';
+-- Note: JWT secret is automatically managed by Supabase
 
 -- Users table (profile only; Supabase auth handles identity)
 CREATE TABLE public.users (

@@ -1,13 +1,17 @@
+import 'url-polyfill'; // For URL polyfill in web environments
 import { createClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 import { webSecureStore } from '../utils/webSecureStore';
 
-// Mock Supabase configuration for frontend testing
-// Replace these with your actual Supabase values when ready
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'mock-anon-key';
+// Get Supabase configuration from environment variables
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Create Supabase client with mock values for frontend testing
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.');
+}
+
+// Create Supabase client
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: webSecureStore,

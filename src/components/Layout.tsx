@@ -7,7 +7,6 @@ import {
   Heart, 
   Settings 
 } from 'lucide-react';
-import DemoBanner from './DemoBanner';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -26,9 +25,6 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Demo Banner */}
-      <DemoBanner />
-      
       {/* Desktop Sidebar */}
       <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0">
         <div className="flex-1 flex flex-col min-h-0 bg-white border-r border-gray-200">
